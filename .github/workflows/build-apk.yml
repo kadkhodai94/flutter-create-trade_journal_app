@@ -1,0 +1,76 @@
+name: Build Flutter APK from ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.5"
+          channel: "stable"
+
+      - name: Find and extract ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No zip file found!"
+            exit 1
+          fi
+
+          echo "Found zip file: $ZIP_FILE"
+          mkdir extracted
+          unzip "$ZIP_FILE" -d extracted
+
+      - name: Create Flutter project
+        run: |
+          flutter create trade_journal_app
+
+      - name: Copy extracted files into Flutter project
+        run: |
+          PROJECT_DIR="trade_journal_app"
+
+          PUBSPEC_PATH=$(find extracted -name "pubspec.yaml" | head -n 1)
+          LIB_PATH=$(find extracted -type d -name "lib" | head -n 1)
+
+          if [ -z "$PUBSPEC_PATH" ]; then
+            echo "pubspec.yaml not found in zip!"
+            exit 1
+          fi
+
+          if [ -z "$LIB_PATH" ]; then
+            echo "lib folder not found in zip!"
+            exit 1
+          fi
+
+          cp "$PUBSPEC_PATH" "$PROJECT_DIR/pubspec.yaml"
+          rm -rf "$PROJECT_DIR/lib"
+          cp -r "$LIB_PATH" "$PROJECT_DIR/lib"
+
+      - name: Get Flutter packages
+        working-directory: trade_journal_app
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: trade_journal_app
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-journal-apk
+          path: trade_journal_app/build/app/outputs/flutter-apk/app-release.apk
